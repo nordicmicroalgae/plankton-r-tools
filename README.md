@@ -1,5 +1,5 @@
 # plankton-r-tools
-![Image description](https://upload.wikimedia.org/wikipedia/commons/thumb/f/fa/Hatay_thalassa.jpg/320px-Hatay_thalassa.jpg) ![Image description](https://upload.wikimedia.org/wikipedia/commons/thumb/8/85/SMHI_Logo.svg/500px-SMHI_Logo.svg.png)
+![Image description](https://upload.wikimedia.org/wikipedia/commons/thumb/f/fa/Hatay_thalassa.jpg/640px-Hatay_thalassa.jpg) ![Image description](https://upload.wikimedia.org/wikipedia/commons/thumb/8/85/SMHI_Logo.svg/500px-SMHI_Logo.svg.png)
 
 ## a collection of R scripts, a R Markdown document and a Shiny App with web interface to process and analyze output from PlanktonToolbox
 
