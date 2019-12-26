@@ -1,0 +1,1096 @@
+---
+title: "Plankton R Tools"
+author: "Bengt Karlson & Markus Lindh"
+date: '2019-05-27'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# 0. Set working environment / Ställ in hemkatalog, bibliotek och miljövariabler
+
+## 0.1 Path / Hemkatalog
+Lägg R Markdown skriptet i den katalog där du har datafiler för input och vill spara din output, öppna skriptet från den katalogen och det blir automatiskt din hemkatalog. Om detta inte fungerar behöver du manuellt ställa in din hemkatalog, t.ex.
+
+```{r hemkatalog}
+#setwd("D:/R/plankton_r_tools")
+#getwd()
+```
+
+## 0.2 Load Libraries / Ladda in Bibliotek
+```{r libs}
+ipak <- function(pkg){
+new.pkg <- pkg[!(pkg %in% installed.packages()[, "Package"])]
+if (length(new.pkg))
+install.packages(new.pkg, dependencies = TRUE)
+sapply(pkg, require, character.only = TRUE)
+}
+packages <- c("tidyverse","stringi","stringr","lubridate","cowplot","scales","ggthemes","ggpmisc","ggpubr","maps","mapdata","mapdata","PBSmapping","leaflet","mapview")
+ipak(packages)
+
+# library(tidyverse) # includes ggplot2 tidyr etc
+# library(stringi) #useful when sorting data
+# library(stringr) #useful when sorting data
+# library(lubridate) # useful for workiing with dates
+# library(cowplot) # useul for combining multiple plots
+# library(scales)
+# library(ggthemes)
+# library(ggpmisc)
+# library(ggpubr)
+# library(maps)
+# library(mapdata)
+# library(PBSmapping)
+# library(leaflet, quietly = T, warn.conflicts = F)
+# library(mapview, quietly = T, warn.conflicts = F)
+```
+
+## 0.3 Set colours / Bestäm manuella färgpaletter
+```{r cols}
+# Discrete colours / Diskreta färger
+Brewer_col=colorRampPalette(brewer.pal(9,"Set1"))(9)
+Brewer_col_short=colorRampPalette(brewer.pal(9,"Set1"))(4)
+# Continuous colors using the "Spectral" colorbrewer palette, mapped to value / Kontinuerliga färger
+spectral <- colorNumeric("Spectral", domain = NULL)
+```
+
+## 0.4 Set date range / Bestäm datumomfattning
+```{r daterange}
+starttime <- ISOdatetime(1972,1,1,0,0,1, tz = "GMT")
+start1998 <- ISOdatetime(1998,1,1,0,0,1, tz = "GMT")
+endtime <- ISOdatetime(2017,12,31,23,59,59, tz = "GMT")
+start_end = c(starttime,endtime)
+
+start2017 <- ISOdatetime(2017,1,1,0,0,0, tz = "GMT")
+end2017 <- ISOdatetime(2017,12,31,0,0,0, tz = "GMT")
+
+start_end_2017 <- c(start2017,end2017)
+```
+
+# 1. Read text and Excel files into R / Att läsa in text och Excelfiler till R
+```{r stationlistexample}
+mydata <- read.table("data/station_list.txt",
+                     sep = "\t",
+                     header = TRUE)
+```
+
+## 1.1 load phytoplankton data downloaded from http://sharkweb.smhi.se
+```{r phytoexample}
+mydata2 <- read.table("data/slÃ¤ggÃ¶_n14_anholt_e_2017.txt",
+                     sep = "\t",
+                     skip=0,
+                     header = TRUE,
+                     na.strings = "",
+                     comment.char = "", # needed to avoid problems with "# counted"
+                     encoding = "utf8") # may need to be specified)
+```
+
+## 1.2 load phytoplankton data downloaded from http://sharkweb.smhi.se
+The data has been aggregated to the species level using Plankton toolbox
+zeroes have been added when a species was not observed
+
+```{r aggrphytoexample}
+mydata3 <- read.table("data/slÃ¤ggÃ¶_n14_anholt_e_2017_aggregated_to_species_zeroes_added.txt",
+                      sep = "\t",
+                      skip=0,
+                      header = TRUE,
+                      na.strings = "",
+                      comment.char = "", # needed to avoid problems with "# counted"
+                      encoding = "utf8") # may need to be specified)
+
+```
+
+## 1.3 load the data for a list of stations
+```{r excelstations}
+mydata <- read_excel("data/station_list.xlsx")
+```
+
+## 1.4 load some data from Plankton Toolbox counting module
+First sheet (default)
+```{r excelfirst}
+mydata2 <- read_excel("data/Anholt E_2017-03-11_0-10m.xlsx")
+```
+
+First sheet (selected)
+```{r excelfirstselect}
+mydata3 <- read_excel("data/Anholt E_2017-03-11_0-10m.xlsx",
+                      sheet = "Table summary")
+```
+
+Fifth sheet (selected)
+```{r excelfifthselect}
+mydata4 <- read_excel("data/Anholt E_2017-03-11_0-10m.xlsx", sheet = "README")
+```
+
+# 2. Read and plot chlorophyll data from staion Anholt E in the Kattegatt / Läs in och visualisera data från stationen Anholt E i Kattegatt
+
+## 2.1 Load data / Ladda in data
+```{r loadphyschem}
+phys_chem_data <- read.table("data/shark_phys_chem/phys_chem_anholt_e_1972_2017_utf8.txt",
+                            sep="\t",
+                            skip=0,
+                            header = TRUE,
+                            na.strings = "")
+
+
+phys_chem_variables <- variable.names(phys_chem_data)
+```
+
+
+## 2.2 create dates that r can use / skapa datum som R kan använda
+```{r datecreate}
+phys_chem_data = phys_chem_data %>%
+  mutate(rdate = as.POSIXct(visit_date, "%Y-%m-%d", tz = 'GMT'))
+```
+
+## 2.3 create separate columns for year, month, day / skapa separata kolumner för år, månad, dag
+```{r yearmonthday}
+phys_chem_data$ryear <- year(phys_chem_data$rdate)
+phys_chem_data$rmonth <- month(phys_chem_data$rdate)
+phys_chem_data$rday <- mday(phys_chem_data$rdate)
+```
+
+## 2.4 create sensible names of variables / redigera namn till läsbara
+```{r sensiblenames}
+phys_chem_data2 = phys_chem_data %>%
+  mutate(latitude = sample_latitude_dd) %>%
+  mutate(longitude = sample_longitude_dd) %>%
+  mutate(depth = sample_depth_m) %>%
+  mutate(secchi = Secchi.depth..m.) %>%
+  mutate(temp = Temperature.bottle..C.) %>%
+  mutate(temp_ctd = Temperature.CTD..C.) %>%
+  mutate(salinity = Salinity.bottle..o.oo.psu.) %>%
+  mutate(salinity_ctd = Salinity.CTD..o.oo.psu.) %>%
+  mutate(po4 = Phosphate.PO4.P..umol.l.) %>%
+  mutate(sumno3no2 = Nitrite.Nitrate.NO2.NO3.N..umol.l.) %>%
+  mutate(no3 = Nitrate.NO3.N..umol.l.) %>%
+  mutate(no2 = Nitrite.NO2.N..umol.l.) %>%
+  mutate(nh4 = Ammonium.NH4.N..umol.l.) %>%
+  mutate(sio3 = Silicate.SiO3.Si..umol.l.) %>%
+  mutate(totn = Total.Nitrogen.Tot.N..umol.l.) %>%
+  mutate(totp = Total.phosphorus.Tot.P..umol.l.) %>%
+  mutate(chla = Chlorophyll.a.bottle..ug.l.) %>%
+  mutate(ph = pH) %>%
+  mutate(totalk = Alkalinity..mmol.kg.) %>%
+  mutate(humus = Humus..ug.l.) %>%
+  mutate(oxygen = Dissolved.oxygen.O2.bottle..ml.l.) %>%
+  mutate(oxygen_ctd = Dissolved.oxygen.O2.CTD..ml.l.) %>%
+  mutate(pressure_ctd = Pressure.CTD..dbar.) %>%
+  mutate(doc = Dissovled.organic.carbon.DOC..umol.l.) %>%
+  mutate(poc = Particulate.organic.carbon.POC..umol.l.) %>%
+  mutate(pon = Particulate.organic.nitrogen.PON..umol.l.) %>%
+  
+  select(visit_date,
+         station_name,
+         latitude,
+         longitude,
+         rdate,
+         ryear,
+         rmonth,
+         rday,
+         secchi,
+         water_depth_m,
+         depth,
+         temp,
+         temp_ctd,
+         salinity,
+         salinity_ctd,
+         po4,
+         sumno3no2,
+         no2,
+         no3,
+         nh4,
+         sio3,
+         humus,
+         ph,
+         totalk,
+         totn,
+         totp,
+         chla,
+         oxygen,
+         oxygen_ctd,
+         pressure_ctd,
+         doc,
+         poc,
+         pon)
+```
+
+## 2.5 combine ctd and bottle data, bottle data is preferred / kombinera CTD och flaskdata (flaskdata är att föredra)
+```{r combinectdbottle}
+x <- phys_chem_data2$salinity
+y <- phys_chem_data2$salinity_ctd
+
+z <-coalesce(x,y)
+
+phys_chem_data2$salinity_combined <- z   
+
+x <- phys_chem_data2$temp
+y <- phys_chem_data2$temp_ctd
+
+z <-coalesce(x,y)
+
+phys_chem_data2$temp_combined <- z   
+```
+
+## 2.6 calculate N:P ratio / beräkna N:P förhållandet
+```{r NPratio}
+phys_chem_data2 = phys_chem_data2 %>%
+  mutate(np_ratio = (no3 + no2 + nh4)/po4)
+```
+
+## 2.7 select chla data from 0-10 m / välj chl a data från 0-10 m
+```{r chlasurface}
+phys_chem_data3 <- phys_chem_data2 %>%
+  filter(rdate >= start1998) %>%
+  filter(depth >= 0) %>%
+  filter(depth <= 10) %>%
+  select(station_name,rdate,latitude,longitude,depth,chla)
+
+
+data_to_plot <- phys_chem_data3 %>%
+  group_by(rdate,station_name) %>%
+  summarise(
+    chla_mean = mean(chla),
+    chla_sd = sd(chla),
+    chla_min = min(chla),
+    chla_max = max(chla),
+    number_of_samples = n())
+```
+
+## 2.8 make some plots / skapa grafer
+Chl a at Anholt E / Chl a på Anholt E
+
+```{r chlaanholtplot}
+anholt_e_chla_plot <- data_to_plot %>%
+  filter(station_name %in% c("ANHOLT E"))  %>%
+  ggplot +
+  aes(
+    x = rdate,
+    y = chla_mean
+  ) +
+  geom_point(shape = 21, 
+             colour = "darkgreen",
+             fill = "darkgreen",
+             size = 1) +
+  ylim(0, 30) +
+  scale_x_datetime(limits = start_end, date_breaks = "5 years", date_labels = "%Y") +
+  labs(x = "Ãr", y = 'klorofyll a, Âµg/l') +
+  ggtitle("Anholt E", subtitle = 'Chlorophyll a, means 0-10 m') +
+  theme_bw(base_size = 11, base_family = "sans") +
+  theme(plot.title = element_text(size = 14, lineheight=.8, face="bold",hjust = 0.5),
+        plot.subtitle=element_text(size=14, hjust=0.5, face="italic", color="black"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank())
+
+print(anholt_e_chla_plot)
+
+save_plot("plots/anholt_e_chla_plot.pdf", anholt_e_chla_plot,
+          ncol = 1, # we're saving a grid plot of 1 column
+          nrow = 1, # and 1 row
+          # each individual subplot should have an aspect ratio of 1.3
+          base_aspect_ratio = 1.5
+)
+```
+
+
+surface temperature and salinity at Anholt E / yttemperatur och salinitet på Anholt E
+```{r tempsalanholt}
+anholt_e_surface_temperature_plot <- phys_chem_data2 %>%
+  filter(station_name %in% c("ANHOLT E"))  %>%
+  filter(depth <= 1)  %>%
+  ggplot +
+  aes(
+    x = rdate,
+    y = temp_combined
+  ) +
+  geom_point(shape = 21, 
+             colour = "red",
+             fill = "red",
+             size = 1) +
+  ylim(-5, 25) +
+  scale_x_datetime(limits = start_end, date_breaks = "10 years", date_labels = "%Y") +
+  labs(x = "Year", y = 'Temperature, Â°C') +
+  ggtitle("Anholt E", subtitle = 'Temperature, surface') +
+  theme_bw(base_size = 11, base_family = "sans") +
+  theme(plot.title = element_text(size = 14, lineheight=.8, face="bold",hjust = 0.5),
+        plot.subtitle=element_text(size=14, hjust=0.5, face="italic", color="black"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank())
+
+print(anholt_e_surface_temperature_plot)
+
+save_plot("plots/anholt_e_surface_temperature_plot.pdf", anholt_e_surface_temperature_plot,
+          ncol = 1, # we're saving a grid plot of 1 column
+          nrow = 1, # and 1 row
+          # each individual subplot should have an aspect ratio of 1.3
+          base_aspect_ratio = 1.5
+)
+
+anholt_e_surface_salinity_plot <- phys_chem_data2 %>%
+  filter(station_name %in% c("ANHOLT E"))  %>%
+  filter(depth <= 1)  %>%
+  ggplot +
+  aes(
+    x = rdate,
+    y = salinity_combined
+  ) +
+  geom_point(shape = 21, 
+             colour = "blue",
+             fill = "blue",
+             size = 1) +
+  # ylim(-5, 25) +
+  scale_x_datetime(limits = start_end, date_breaks = "10 years", date_labels = "%Y") +
+  labs(x = "Year", y = 'Salinity, ppt') +
+  ggtitle("Anholt E", subtitle = 'Salinity, surface') +
+  theme_bw(base_size = 11, base_family = "sans") +
+  theme(plot.title = element_text(size = 14, lineheight=.8, face="bold",hjust = 0.5),
+        plot.subtitle=element_text(size=14, hjust=0.5, face="italic", color="black"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank())
+
+print(anholt_e_surface_salinity_plot)
+
+save_plot("plots/anholt_e_surface_salinity_plot.pdf", anholt_e_surface_salinity_plot,
+          ncol = 1, # we're saving a grid plot of 1 column
+          nrow = 1, # and 1 row
+          # each individual subplot should have an aspect ratio of 1.3
+          base_aspect_ratio = 1.5
+)
+```
+
+## 2.9 calculate means and standard deviatons and plot / beräkna medelvärden och standardavvikelser och plotta
+```{r moredata}
+more_data_to_plot = phys_chem_data2 %>%
+  filter(depth <= 1) %>%
+  filter(ryear >= 1988) %>%
+  select(rdate,ryear,rmonth,temp_combined,salinity_combined)
+
+temperature_barplot = more_data_to_plot %>%
+  ggplot() +
+  geom_boxplot(
+    aes(
+      x = rmonth,
+      y = temp_combined,
+      group = rmonth
+    )) +
+  # scale_fill_brewer(palette = "Set1") +
+  ggtitle('Anholt E, Temperature medians 1988 to 2017') +
+  # ylim(-5, 25) +
+  # xlim(startdate, enddate) +
+  scale_x_continuous(breaks=c(1,2,3,4,5,6,7,8,9,10,11,12)) +
+  # scale_y_continuous(trans = "log10", limits = c(0.001,1),breaks=c(0.001,0.01, 0.1,1)) +
+  # xlim(0, 13) +
+  xlab("Month") +
+  # ylab(bquote('Biovolume, '*mm^3*' '*L^-1*''))+
+  ylab("Temeprature, Â°C")+
+  
+  theme_bw(base_size = 14, base_family = "sans") +
+  theme(plot.title = element_text(lineheight=.8, face="bold",hjust = 0.5),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        # panel.grid.major = element_line(colour = 'black', linetype = 'dotted'),
+        # panel.grid.minor = element_line(colour = 'black', linetype = 'dotted'),
+        legend.position="right",
+        legend.title = element_blank())
+
+print(temperature_barplot)
+
+
+
+salinity_barplot = more_data_to_plot %>%
+  ggplot() +
+  geom_boxplot(
+    aes(
+      x = rmonth,
+      y = salinity_combined,
+      group = rmonth
+    )) +
+  # scale_fill_brewer(palette = "Set1") +
+  ggtitle('Anholt E, salinity, medians 1988 to 2017') +
+  ylim(10, 35) +
+  # xlim(startdate, enddate) +
+  scale_x_continuous(breaks=c(1,2,3,4,5,6,7,8,9,10,11,12)) +
+  # scale_y_continuous(trans = "log10", limits = c(0.001,1),breaks=c(0.001,0.01, 0.1,1)) +
+  # xlim(0, 13) +
+  xlab("Month") +
+  # ylab(bquote('Biovolume, '*mm^3*' '*L^-1*''))+
+  ylab("Temeprature, Â°C")+
+  
+  theme_bw(base_size = 14, base_family = "sans") +
+  theme(plot.title = element_text(lineheight=.8, face="bold",hjust = 0.5),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        # panel.grid.major = element_line(colour = 'black', linetype = 'dotted'),
+        # panel.grid.minor = element_line(colour = 'black', linetype = 'dotted'),
+        legend.position="right",
+        legend.title = element_blank())
+
+print(salinity_barplot)
+
+two_bar_plots <- plot_grid(temperature_barplot,salinity_barplot, labels = c("A", "B"), ncol = 1)
+
+print(two_bar_plots)
+
+save_plot("plots/anholt_e_bar_plots.pdf", two_bar_plots,
+          ncol = 1, # we're saving a grid plot of 1 column
+          nrow = 2, # and 1 row
+          # each individual subplot should have an aspect ratio of 1.3
+          base_aspect_ratio = 1.5
+)
+```
+
+## 2.10 correlations / korrelationer
+check correlation between depth and salinity / bestäm korrelationen mellan djup och salinitet
+
+```{r depthsalcor}
+correlation_data = phys_chem_data2 %>%
+  select(depth,salinity_combined,temp_combined)
+
+salinity_depth_correlation <- ggscatter(correlation_data,
+                                              x = "salinity_combined",
+                                              y = "depth",
+                                              add = "reg.line",
+                                              add.params = list(color = "blue", fill = "lightgray"), # Customize reg. line
+                                              conf.int = TRUE # Add confidence interval
+) +
+  stat_cor(method = "pearson", label.x = 15, label.y = 35)
+
+```
+
+Add correlation coefficient
+```{r corcoeff}
+salinity_depth_correlation_with_coeff <- salinity_depth_correlation + stat_cor(method = "pearson", label.x = 15, label.y = 50)
+
+print(salinity_depth_correlation_with_coeff)
+
+
+correlation_data = phys_chem_data2 %>%
+  select(depth,salinity_combined,temp_combined)
+
+
+
+
+salinity_temperature_correlation <- ggscatter(correlation_data,
+                                      x = "salinity_combined",
+                                      y = "temp_combined",
+                                      add = "reg.line",
+                                      add.params = list(color = "blue", fill = "lightgray"), # Customize reg. line
+                                      conf.int = TRUE # Add confidence interval
+ ) +
+   stat_cor(method = "pearson", label.x = 15, label.y = 15)
+
+ # Add correlation coefficient
+salinity_temperature_correlation + stat_cor(method = "pearson", label.x = 15, label.y = 15)
+
+print(salinity_temperature_correlation)
+
+```
+
+# 3. Plot four phytoplankton taxa / Plotta 4 olika växtplankton taxa
+## 3.1 Load plankton data / Ladda plankton data
+```{r plot4taxadata}
+plankton_data <- read.table("data/slÃ¤ggÃ¶_n14_anholt_e_2017_aggregated_to_species_zeroes_added.txt",
+                            sep="\t",
+                            skip=0,
+                            header = TRUE,
+                            na.strings = "",
+                            comment.char = "", # needed to avoid problems with "# counted"
+                            encoding = "latin1") # may need to be specified on Mac
+
+```
+
+## 3.2.check variables / kontrollera och välj variabler
+```{r checkvar}
+variables <- variable.names(plankton_data)
+
+plankton_data2 = plankton_data %>%
+  filter(parameter == "Abundance") %>%
+  select(sample_date,station_name,sample_latitude_dd,sample_longitude_dd,sample_min_depth_m,sample_max_depth_m,scientific_name,parameter,value,unit)
+
+variables2 <- variable.names(plankton_data2)
+```
+
+
+## 3.3 create dates that r can use / skapa datum som R kan använda
+```{r createdate2}
+plankton_data2 = plankton_data2 %>%
+  mutate(rdate = as.POSIXct(sample_date, "%Y-%m-%d", tz = 'GMT'))
+
+
+plankton_data2$ryear <- year(plankton_data2$rdate)
+plankton_data2$rmonth <- month(plankton_data2$rdate)
+plankton_data2$rday <- mday(plankton_data2$rdate)
+```
+
+## 3.4 check what stations are found / kolla vilka stationer som finns
+```{r stationsfound2}
+list_of_stations <- as.character(unique(plankton_data2$station_name))
+
+#sort the list
+
+list_of_stations <- stri_sort(list_of_stations, decreasing = FALSE, na_last = NA, opts_collator = NULL)
+
+#save the list as a txt file
+
+write.csv(list_of_stations, "data_output/list_of_stations.txt", quote = FALSE, na = "", row.names=F)
+```
+
+## 3.5 check what taxa are found / kolla vilka taxa som finns
+```{r taxafound2}
+list_of_taxa <- as.character(unique(plankton_data2$scientific_name))
+
+#sort the list
+
+list_of_taxa <- stri_sort(list_of_taxa, decreasing = FALSE, na_last = NA, opts_collator = NULL)
+
+#save the list as a txt file
+
+write.csv(list_of_taxa, "data_output/list_of_taxa.txt", quote = FALSE, na = "", row.names=F)
+```
+
+## 3.6.start plotting
+plot all taxa at all stations
+```{r taxaallstationsplot}
+plot0 <- plankton_data2 %>%
+  ggplot +
+  geom_point() +
+  aes(x = rdate,
+      y = value)
+
+print(plot0)
+```
+
+plot Skeletonema marinoi
+```{r skeletonemaplot}
+plot1 <- plankton_data2 %>%
+  filter(scientific_name == "Skeletonema marinoi") %>%
+  filter(station_name == "SLÃGGÃ") %>%
+  ggplot +
+  geom_point() +
+  aes(x = rdate,
+    y = value)
+
+print(plot1)
+
+# Add nice legends and a title
+
+plot2 <- plankton_data2 %>%
+  filter(scientific_name == "Skeletonema marinoi") %>%
+  filter(station_name == "SLÃGGÃ") %>%
+  ggplot +
+  aes(
+    x = rdate,
+    y = value) +
+  # geom_hline(aes(yintercept = 1500) , color="red", linetype="dashed") +
+  geom_point() +
+  ggtitle('Skeletonema marinoi') +
+  # ylim(0, 11000) +
+  # scale_y_log10() +
+  xlim(start2017, end2017) +
+  xlab("Date") +
+  ylab(bquote('Abundance, '*cells*' '*L^-1*''))+
+  theme_bw(base_size = 11, base_family = "sans") +
+  theme(plot.title = element_text(lineheight=.8, face="bold",hjust = 0.5),
+        # panel.grid.major = element_line(colour = 'black', linetype = 'dotted'),
+        # panel.grid.minor = element_line(colour = 'black', linetype = 'dotted'),
+        legend.position="right",
+        legend.title = element_blank())
+
+print(plot2)
+
+#Use color to differentiate stations
+
+plot3 <- plankton_data2 %>%
+  filter(scientific_name == "Skeletonema marinoi") %>%
+  # filter(station_name == "SLÃGGÃ") %>%
+  ggplot +
+  aes(
+    x = rdate,
+    y = value+1, # added 1 for log plot
+    colour = station_name) +
+  # geom_hline(aes(yintercept = 1500) , color="red", linetype="dashed") +
+  geom_point() +
+  ggtitle('Skeletonema marinoi') +
+  # ylim(0, 11000) +
+  scale_y_log10() +
+  xlim(start2017, end2017) +
+  xlab("Date") +
+  ylab(bquote('Abundance, '*cells + 1*' '*L^-1*''))+
+  theme_bw(base_size = 11, base_family = "sans") +
+  theme(plot.title = element_text(lineheight=.8, face="bold",hjust = 0.5),
+        # panel.grid.major = element_line(colour = 'black', linetype = 'dotted'),
+        # panel.grid.minor = element_line(colour = 'black', linetype = 'dotted'),
+        legend.position="right",
+        legend.title = element_blank())
+
+print(plot3)
+
+#Try a logarithmic x-axis
+
+plot4 <- plankton_data2 %>%
+  filter(scientific_name == "Skeletonema marinoi") %>%
+  # filter(station_name == "SLÃGGÃ") %>%
+  ggplot +
+  aes(
+    x = rdate,
+    y = value+1) + # added 1 for log plot
+  # geom_hline(aes(yintercept = 1500) , color="red", linetype="dashed") +
+  geom_point() +
+  ggtitle('Skeletonema marinoi') +
+  # ylim(0, 11000) +
+  scale_y_log10() +
+  xlim(start2017, end2017) +
+  xlab("Date") +
+  ylab(bquote('Abundance, '*cells + 1*' '*L^-1*''))+
+  theme_bw(base_size = 11, base_family = "sans") +
+  theme(plot.title = element_text(lineheight=.8, face="bold",hjust = 0.5),
+        # panel.grid.major = element_line(colour = 'black', linetype = 'dotted'),
+        # panel.grid.minor = element_line(colour = 'black', linetype = 'dotted'),
+        legend.position="right",
+        legend.title = element_blank())
+
+print(plot4)
+
+```
+
+plot Dinophysis
+```{r dinophysisplot}
+#Use different symbols to discrimate taxa
+#Define the date labels position and type on the axis in detail
+
+p106 <- plankton_data2 %>%
+  filter(station_name == "SLÃGGÃ") %>%
+  filter(scientific_name %in% c("Dinophysis acuminata",
+                                "Dinophysis acuta",
+                                "Dinophysis norvegica",
+                                "Dinophysis tripos")) %>%
+  ggplot +
+  aes(
+    x = rdate,
+    y = value,
+    shape = scientific_name) +
+  scale_shape_manual(values = c(0,1,2,6),labels =c("Dinophysis acuminata",
+                                                            "Dinophysis acuta",
+                                                             "Dinophysis norvegica",
+                                                            "Dinophysis tripos")) +
+  # geom_hline(aes(yintercept = 1500) , color="red", linetype="dashed") +
+  geom_point() +
+  ggtitle('Dinophysis spp.') +
+  # ylim(0, 25000) +
+  # scale_y_log10(labels = trans_format(log10, math_format(10^.x))) +
+  # xlim(start2017, end2017) +
+  scale_x_datetime(lim = start_end_2017, date_breaks = "2 month", date_labels = "%b") +
+  xlab("Month") +
+  ylab(bquote('Abundance, '*cells*' '*L^-1*''))+
+  theme_bw(base_size = 11, base_family = "sans") +
+  theme(plot.title = element_text(lineheight=.8, face="bold",hjust = 0.5),
+        # panel.grid.major = element_line(colour = 'black', linetype = 'dotted'),
+        # panel.grid.minor = element_line(colour = 'black', linetype = 'dotted'),
+        legend.position="right",
+        legend.title = element_blank())
+
+print(p106)
+```
+
+## 3.7 Save plot of dinophysis in two diffent formats / spara dinophysis plottar i två olika format
+```{r saveplots}
+save_plot("plots/four Dinophysis 2017.pdf", p106, base_height = 3, base_width = 6) #inches
+save_plot("plots/four Dinophysis 2017.png", p106, base_height = 3, base_width = 6) #inches
+```
+
+## 3.8 tips and tricks / tips och trix
+```{r tipstricks}
+# modify data
+
+mutate(salinity = ifelse(salinity >= 10, 10 ,chl_fluor))
+
+# change name of a station
+
+plankton_data2 = plankton_data2 %>%
+  mutate(station_name = ifelse(station_name == "ANHOLT E", "Anholt",
+                               as.character(station_name)))
+  
+```
+
+# 4. Maps / Kartor
+
+ GSHHG - A Global Self-consistent, Hierarchical,
+ High-resolution Geography Database http://www.soest.hawaii.edu/pwessel/gshhg/
+
+ put the folder "gshhg-bin-2.3.6" in the maptools or in the PBSmapping folder
+ you will need the path to the folder you use
+
+## 4.1 load data / ladda in data
+```{r loadmapdata}
+map_data <- read.table("data/station_list.txt",
+                       sep = "\t",
+                       header = TRUE)
+
+
+map_data2 <- map_data %>%
+  mutate(lon = longitude)  %>%
+  mutate(lat = latitude)  %>%
+  select(short__station_name,lat,lon)
+```
+
+## 4.2 modify data for PBSmapping / modifiera data för input till paketet PBSmapping
+```{r mapdatamod}
+# spaces are not allowed in station names, it seems
+# take away the space in "Anholt E"
+
+map_data2$short__station_name<-gsub("Anholt E", "Anholt", map_data2$short__station_name, ignore.case = FALSE, perl = FALSE,
+                            fixed = TRUE, useBytes = FALSE)
+
+
+map_data3 <- map_data2 %>%
+  mutate(X = lon)  %>%
+  mutate(Y = lat)  %>%
+  mutate(EID = 1:length(lat)) %>% #create a list of event numbers
+  select(EID,X,Y,short__station_name)
+  
+
+# save the data as a text file
+write.table(map_data3, "data_output/map_data3.txt", sep = "\t", quote = FALSE, na = "", row.names=F)
+```
+
+## 4.3 create a map with stations in the Baltic Sea / skapa en karta med stationer i Östersjön
+```{r mapstationsplot}
+# Specify desired map boundaries:
+xlim <- c(2, 31)
+ylim <- c(53.4, 66.5)
+
+#import the data
+myevents <- importEvents("data_output/map_data3.txt",projection = "LL")
+
+# set the paths for the high resolution map data
+# full resolution
+# callGSHHG <- system.file("share/gshhg-bin-2.3.6/gshhs_f.b",
+#                         package = "maptools", mustWork = TRUE)
+
+#set the paths for the high resolution map data
+#high resolution
+# callGSHHG <- system.file("share/gshhg-bin-2.3.6/gshhs_h.b",
+#                          package = "maptools", mustWork = TRUE)
+
+#set the paths for the intermediate resolution map data
+#intermediate resolution
+callGSHHG <- system.file("share/gshhg-bin-2.3.6/gshhs_i.b",
+                         package = "maptools", mustWork = TRUE)
+
+#set the paths for the low resolution map data
+#low resolution
+# callGSHHG <- system.file("share/gshhg-bin-2.3.6/gshhs_l.b",
+#                          package = "maptools", mustWork = TRUE)
+
+baltic_sea_area <- importGSHHS(callGSHHG, xlim = xlim,
+                               ylim = ylim, maxLevel = 1)
+
+#set a name for the map
+pdf('plots/station_map_baltic.pdf',family = "Helvetica", width = 5) #,width = 3.5, height = 4
+#plot the map
+plotMap (baltic_sea_area, col = "grey", bg = "white",projection = "LL",cex = 1)
+# Add the locations along with the labels:
+addPoints(myevents, pch = 21, col = "red", bg = "red", cex = 1)
+text(myevents$X+0.4, myevents$Y-0.05, myevents$short__station_name,
+     pos = 1, cex = 0.7)
+# #Add text
+
+text (6, 57, "North",cex=0.7,font = 3)
+text (6, 56.7, "Sea",cex=0.7,font = 3)
+text (18.7, 56, "Baltic",cex=0.7,font = 3)
+text (18.7, 55.7, "Proper",cex=0.7,font = 3)
+text (19.2, 61.6, "Bothnian",cex=0.7,font = 3)
+text (19.2, 61.3, "Sea",cex=0.7,font = 3)
+text (23.2, 65.1, "Bothnian",cex=0.7,font = 3)
+text (23.2, 64.8, "Bay",cex=0.7,font = 3)
+
+dev.off()
+```
+
+## 4.4 Make maps as above but with bubbles and for Skagerrak / Gör som ovan men med bubblor och för Skagerrak
+
+## 4.5 load data / ladda in mer kartdata
+```{r loadmoremapdata}
+map_data <- read.table("data/slÃ¤ggÃ¶_n14_anholt_e_2017_aggregated_to_genus_zeroes_added.txt",
+                       sep="\t",
+                       skip=0,
+                       header = TRUE,
+                       na.strings = "",
+                       comment.char = "", # needed to avoid problems with "# counted"
+                       encoding = "latin1") # may need to be specified on Mac
+
+# select the data you would like to use
+
+# check variables
+variables <- variable.names(map_data)
+
+# select variables of interest
+map_data1 = map_data %>%
+  filter(parameter == "Abundance") %>%
+  select(sample_date,station_name,sample_latitude_dd,sample_longitude_dd,sample_min_depth_m,sample_max_depth_m,scientific_name,parameter,value,unit)
+
+variables1 <- variable.names(map_data1)
+
+#create dates that r can use
+map_data1 = map_data1 %>%
+  mutate(rdate = as.POSIXct(sample_date, "%Y-%m-%d", tz = 'GMT')) %>%
+  mutate(ryear = year(rdate)) %>%
+  mutate(rmonth = month(rdate)) %>%
+  mutate(rday = day(rdate))
+  
+  
+# select depth 0-10 m only
+map_data1 = map_data1 %>%
+  filter(sample_min_depth_m == 0) %>%
+  filter(sample_max_depth_m == 10)
+
+# check depths
+sample_min_depths <- unique(map_data1$sample_min_depth_m)
+sample_max_depths <- unique(map_data1$sample_max_depth_m)
+
+
+# select Alexandrium only
+map_data1 = map_data1 %>%
+  filter(scientific_name %in% c("Alexandrium"))
+
+# select April only
+map_data1 = map_data1 %>%
+  filter(rmonth == 4)
+
+# change name of latittude and longitude
+map_data2 <- map_data1 %>%
+  mutate(lon = sample_longitude_dd)  %>%
+  mutate(lat = sample_latitude_dd)  %>%
+  select(station_name,lat,lon,scientific_name,value,rdate)
+
+
+# modify data for PBSmapping
+# spaces are not allowed in station names, it seems
+# take away the space in "N14 FALKENBERG"
+
+map_data2$station_name<-gsub("N14 FALKENBERG", "N14", map_data2$station_name, ignore.case = FALSE, perl = FALSE,
+                            fixed = TRUE, useBytes = FALSE)
+
+# Create event id EID
+map_data3 <- map_data2 %>%
+  mutate(X = lon)  %>%
+  mutate(Y = lat)  %>%
+  mutate(Z = value) %>%
+  mutate(EID = 1:length(lat)) %>% #create a list of event numbers
+  select(EID,X,Y,Z,station_name)
+  
+
+# save the data as a text file
+write.table(map_data3, "data_output/map_data3.txt", sep = "\t", quote = FALSE, na = "", row.names=F)
+
+```
+
+## 4.6 create a map with stations / skapa en karta med stationer
+```{r mapskagerrakstations}
+# Specify desired map boundaries:
+xlim <- c(2, 13)
+ylim <- c(54, 60)
+
+
+#import the data
+myevents <- importEvents("data_output/map_data3.txt",projection = "LL")
+
+# set the paths for the high resolution map data
+# full resolution
+# callGSHHG <- system.file("share/gshhg-bin-2.3.6/gshhs_f.b",
+#                         package = "maptools", mustWork = TRUE)
+
+#set the paths for the high resolution map data
+#high resolution
+# callGSHHG <- system.file("share/gshhg-bin-2.3.6/gshhs_h.b",
+#                          package = "maptools", mustWork = TRUE)
+
+
+
+#set the paths for the intermediate resolution map data
+#intermediate resolution
+callGSHHG <- system.file("share/gshhg-bin-2.3.6/gshhs_i.b",
+                         package = "maptools", mustWork = TRUE)
+
+#set the paths for the low resolution map data
+#low resolution
+# callGSHHG <- system.file("share/gshhg-bin-2.3.6/gshhs_l.b",
+#                          package = "maptools", mustWork = TRUE)
+
+map_area <- importGSHHS(callGSHHG, xlim = xlim,
+                               ylim = ylim, maxLevel = 1)
+
+
+# plot the mapp -----
+#set a name for the map
+pdf('plots/alexandrium_map_kattegat_skagerrak.pdf',family = "Helvetica", width = 5) #,width = 3.5, height = 4
+#plot the map
+plotMap (map_area, col = "grey", bg = "white",projection = "LL",cex = 1)
+# Add the locations along with the labels:
+addBubbles(myevents,
+           max.size = 0.5,
+           symbol.bg = "red",
+           symbol.zero = FALSE,
+           legend.title = "Alexandrium abundance",
+           legend.type = "vert",
+           legend.cex = 0.5)
+
+text(myevents$X+0.4, myevents$Y-0.05, myevents$station_name,
+     pos = 1, cex = 0.7)
+
+# #Add text
+text (10, 58, "Skagerrak",cex=1.1,font = 3)
+
+
+dev.off()
+```
+
+# BONUS
+## 4.7 Create interactive leaflet maps / skapa interaktiva leaflet kartor
+
+## 4.7.1 Simple example with Chlorophyll data
+
+```{r leafletexample}
+
+# "data_to_plot" Chlorophyll data from above
+str(data_to_plot)
+
+m = leaflet(d) %>% addTiles()
+m %>% addCircleMarkers(~Lon, ~Lat,
+  color = ~spectral(Sosal), fillOpacity = 0.5) %>%
+  addLegend("bottomright", pal = spectral, values = ~Sosal,
+    title = "Salinity (PSU)",
+    opacity = 1
+  )
+```
+
+## 4.7.1 define start and end dates / bestäm start och slutdatum
+```{r startenddate2}
+start2016 <- ISOdatetime(2016,8,1,0,0,0, tz = "GMT")
+end2016 <- ISOdatetime(2016,10,31,0,0,0, tz = "GMT")
+
+start_end_2016 <- c(start2016,end2016)
+```
+
+
+## 4.7.2 load data / ladda in data
+```{r loadmapdata2}
+mydata <- read.table("data/PTBX_1.3.0_Demofiler/REG_program_SE_Wcoast_2017.txt",
+                     header = TRUE,
+                     sep = "\t",
+                     fileEncoding = "latin1")
+
+# select unique station names and positions
+
+position_data <- mydata %>%
+  select(station_name,sample_latitude_dd,sample_longitude_dd)
+
+# select unique stations and postions
+position_data <- unique (position_data)
+
+# change name
+pts <- position_data %>%
+  rename(lat = sample_latitude_dd) %>%
+  rename(lon = sample_longitude_dd)
+```  
+```{r setmapenviron}
+# make a simple track line
+lin = data.frame(lon = c(9, 10, 10.5),
+                 lat = c(58.5, 58.5, 58.5))
+
+# # make a few points
+# pts = data.frame(lon = c(9, 10, 10.5),
+#                  lat = c(58.5, 58.5, 58.5))
+
+# build a polygon
+ply = data.frame(lon = c(10.5, 10, 9.5, 8.5),
+                 lat = c(58.5, 58.3, 58.2, 58))
+
+
+# ply = data.frame(lon = c(-64.916667, -64.983333, -65.516667, -66.083333),
+#                  lat = c(43.266667, 42.783333, 42.65, 42.866667))
+```
+
+## 4.7.3 create a map / skapa karta
+```{r createleafletmap}
+# start basemap (note the argument to hide the zoom buttons)
+map <- leaflet(options = leafletOptions(zoomControl = FALSE)) %>% 
+  
+  # add ocean basemap
+  addProviderTiles(providers$Esri.OceanBasemap) %>%
+  
+  # focus map in a certain area / zoom level
+  setView(lng = 10, lat = 58.5, zoom = 7) %>%
+  
+  # add inset map
+  addMiniMap(
+    tiles = providers$Esri.OceanBasemap,
+    position = 'topleft', 
+    width = 200, height = 200,
+    toggleDisplay = FALSE) %>%
+  
+  # add graticules with nice labels (recommended for static plot)
+  addSimpleGraticule(interval = 1) %>%
+  
+  # add graticules from a NOAA webserver (recommended for interactive plot)
+  # addWMSTiles(
+  #   "https://gis.ngdc.noaa.gov/arcgis/services/graticule/MapServer/WMSServer/",
+  #   layers = c("1-degree grid", "5-degree grid"),
+  #   options = WMSTileOptions(format = "image/png8", transparent = TRUE),
+  #   attribution = NULL,group = 'Graticules') %>%
+  
+  # add points (as circle markers)
+  addCircleMarkers(data = pts, ~lon, ~lat,
+                   weight = 0.5,
+                   col = 'black', 
+                   fillColor = 'red',
+                   radius = 4, 
+                   fillOpacity = 0.9, 
+                   stroke = T, 
+                   label = ~paste0('Point at: ', 
+                                   as.character(round(lat,3)), ', ', 
+                                   as.character(round(lon,3))), 
+                   group = 'Points') %>%
+  
+  # add lines
+  addPolylines(data = lin, ~lon, ~lat,
+               weight = 3,
+               color = 'red',
+               popup = 'This is a line!', 
+               smoothFactor = 3,
+               group = 'Lines') %>%
+  
+  # add polygons
+  addPolygons(data=ply, lng=~lon, lat=~lat,
+              weight = 1, 
+              color = 'grey', 
+              fillColor = 'grey',
+              fill = T, 
+              fillOpacity = 0.25, 
+              stroke = T, 
+              dashArray = c(5,5), 
+              smoothFactor = 3,
+              options = pathOptions(clickable = F),
+              group = 'Polygons')
+
+# show map
+map
+
+# save map as static image
+# webshot::install_phantomjs()
+# mapshot(map, file = 'skagerrak_leaflet_map.png')
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
